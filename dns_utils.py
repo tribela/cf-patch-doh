@@ -108,6 +108,8 @@ async def patch_response(json: dict, type_: str):
     ]
     json['Answer'] = answer
 
+    return json
+
 
 async def fetch_dns(domain: str, type_: str) -> dict:
     if answer := get_cache(domain, type_):

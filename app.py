@@ -23,13 +23,14 @@ async def dns_query(request: Request):
         dns_record = DNSRecord.parse(body)
         domain = dns_record.q.get_qname().idna()
         type_ = QTYPE[dns_record.q.qtype]
+        tid = dns_record.header.id
 
     if answer := dns_utils.get_cache(domain, type_):
         if response_type == 'dns-json':
             return JSONResponse(answer)
         else:
             return Response(
-                dns_utils.json_to_wireformat(answer),
+                dns_utils.json_to_wireformat(answer, tid),
                 headers={
                     'Content-Type': 'dns-message',
                 }
@@ -72,7 +73,7 @@ async def dns_query(request: Request):
                 status_code=res.status_code)
         else:
             return Response(
-                content=dns_utils.json_to_wireformat(answer),
+                content=dns_utils.json_to_wireformat(answer, tid),
                 headers={
                     'Content-Type': 'dns-message',
                 }

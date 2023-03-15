@@ -63,7 +63,7 @@ def wireformat_to_json(wireformat: bytes) -> dict:
     }
 
 
-def json_to_wireformat(json: dict) -> bytes:
+def json_to_wireformat(json: dict, transaction_id=0) -> bytes:
     # Convert DOH json response into wireformat
 
     dns_record = DNSRecord()
@@ -74,6 +74,7 @@ def json_to_wireformat(json: dict) -> bytes:
     dns_record.header.ad = json['AD']
     dns_record.header.cd = json['CD']
     dns_record.header.rcode = json['Status']
+    dns_record.header.id = transaction_id
 
     for question in json['Question']:
         dns_record.add_question(

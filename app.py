@@ -1,137 +1,84 @@
-from datetime import datetime, timedelta
-
+import dns_utils
 import httpx
 
+from dnslib import DNSRecord, QTYPE
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+
 app = FastAPI()
 
-TYPE_A = 1
-TYPE_AAAA = 28
 
+@app.post("/dns-query")
+@app.get("/dns-query")
+async def dns_query(request: Request):
+    if request.method == 'GET' and request.headers.get('accept') == 'application/dns-json':
+        response_type = 'dns-json'
+        domain = request.query_params.get('name')
+        type_ = request.query_params.get('type', 'A')
+    else:
+        response_type = 'dns-wireformat'
+        # Parse dns wireformat
+        body = await request.body()
+        dns_record = DNSRecord.parse(body)
+        domain = dns_record.q.get_qname().idna()
+        type_ = QTYPE[dns_record.q.qtype]
 
-CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, answer)
-
-
-def store_cache(domain: str, type_: str, answer):
-    key = (domain, type_)
-    expire_timestamp = datetime.now() + timedelta(seconds=answer['Answer'][0]['TTL'])
-
-    CACHED_QUERY[key] = (expire_timestamp, answer)
-
-
-def get_cache(domain: str, type_: str):
-    key = (domain, type_)
-    now = datetime.now()
-    if key not in CACHED_QUERY:
-        return None
-    expire_timestamp, answer = CACHED_QUERY.get(key)
-
-    if now > expire_timestamp:
-        # TODO: Delete other expired keys
-        del CACHED_QUERY[key]
-        return None
-
-    return answer
-
-
-async def fetch_dns(domain: str, type_: str):
-    if answer := get_cache(domain, type_):
-        return answer
+    if answer := dns_utils.get_cache(domain, type_):
+        if response_type == 'dns-json':
+            return JSONResponse(answer)
+        else:
+            return Response(
+                dns_utils.json_to_wireformat(answer),
+                headers={
+                    'Content-Type': 'dns-message',
+                }
+            )
 
     async with httpx.AsyncClient() as client:
         res = await client.get(
             'https://1.1.1.1/dns-query',
-            headers={
-                'Accept': 'application/dns-json',
-            },
             params={
                 'name': domain,
                 'type': type_,
-            }
-        )
-
-        answer = res.json()
-        store_cache(domain, type_, answer)
-        return answer
-
-
-async def is_cloudflare(ip: str) -> bool:
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get('https://ifconfig.co/json', params={
-                'ip': ip,
-            })
-
-        data = res.json()
-        return data['asn_org'] == 'CLOUDFLARENET'
-    except Exception as e:
-        print(f'Error while fetching {ip}: {e}')
-        return False
-
-
-async def patch_response(json, type_: str):
-    domain = json['Question'][0]['name']
-    that_response = await fetch_dns('namu.wiki', type_)
-    answer = [
-        answer
-        for answer in json['Answer']
-        if answer['type'] not in (TYPE_A, TYPE_AAAA)
-    ] + [
-        {**answer, 'name': domain}
-        for answer in that_response['Answer']
-        if answer['type'] in (TYPE_A, TYPE_AAAA)
-    ]
-
-    json['Answer'] = answer
-    return json
-
-
-@app.get("/dns-query")
-async def dns_query(request: Request):
-    domain = request.query_params.get('name')
-    type_ = request.query_params.get('type', 'A')
-
-    if answer := get_cache(domain, type_):
-        return JSONResponse(answer)
-
-    async with httpx.AsyncClient() as client:
-        res = await client.get(
-            f'https://1.1.1.1/dns-query?{request.query_params}',
+            },
             headers={
-                key: val
-                for key, val in request.headers.items()
-                if key not in ['host']
-            }
+                'accept': 'application/dns-json',
+            },
         )
 
     try:
-        json = res.json()
+        answer = res.json()
         try:
             ip1 = next(
                 answer['data']
-                for answer in json['Answer']
-                if answer['type'] in (TYPE_A, TYPE_AAAA)  # A, AAAA
+                for answer in answer['Answer']
+                if answer['type'] in (QTYPE.A, QTYPE.AAAA)
             )
         except StopIteration:
             pass
         else:
-            if await is_cloudflare(ip1):
-                json = await patch_response(json, type_)
+            if await dns_utils.is_cloudflare(ip1):
+                answer = await dns_utils.patch_response(answer, type_)
 
-        store_cache(domain, type_, json)
+        dns_utils.store_cache(domain, type_, answer)
 
-        return JSONResponse(
-            json,
-            headers={
-                key: val
-                for key, val in res.headers.items()
-                if key not in ['Content-Length', 'Content-Encoding']
-            },
-            status_code=res.status_code)
+        if response_type == 'dns-json':
+            return JSONResponse(
+                answer,
+                headers={
+                    'Content-Type': 'application/dns-json',
+                },
+                status_code=res.status_code)
+        else:
+            return Response(
+                content=dns_utils.json_to_wireformat(answer),
+                headers={
+                    'Content-Type': 'dns-message',
+                }
+            )
 
-    except Exception as e:
+    except ZeroDivisionError as e:
         print(f'Error while fetching {domain}: {e}')
         return Response(
             res.text,

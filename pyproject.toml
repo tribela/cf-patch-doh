@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "cf-dns-patch"
+version = "0.1.0"
+description = "DoH server that replace IP with higher CF server if needed"
+authors = ["Jeong Arm <kjwonmail@gmail.com>"]
+readme = "README.md"
+packages = [{include = "cf_dns_patch"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+httpx = "^0.23.3"
+fastapi = "^0.94.1"
+uvicorn = "^0.21.0"
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^6.0.0"
+flake8-import-order = "^0.18.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

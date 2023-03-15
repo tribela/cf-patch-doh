@@ -62,6 +62,7 @@ async def dns_query(request: Request):
             if await dns_utils.is_cloudflare(ip1):
                 answer = await dns_utils.patch_response(answer, type_)
 
+        print(answer)
         dns_utils.store_cache(domain, type_, answer)
 
         if response_type == 'dns-json':

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import httpx
 
 from fastapi import FastAPI, Request, Response
@@ -9,12 +11,34 @@ TYPE_A = 1
 TYPE_AAAA = 28
 
 
-CACHED_QUERY = {}  # (Domain, Type): [IPs]
+CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, answer)
+
+
+def store_cache(domain: str, type_: str, answer):
+    key = (domain, type_)
+    expire_timestamp = datetime.now() + timedelta(seconds=answer['Answer'][0]['TTL'])
+
+    CACHED_QUERY[key] = (expire_timestamp, answer)
+
+
+def get_cache(domain: str, type_: str):
+    key = (domain, type_)
+    now = datetime.now()
+    if key not in CACHED_QUERY:
+        return None
+    expire_timestamp, answer = CACHED_QUERY.get(key)
+
+    if now > expire_timestamp:
+        # TODO: Delete other expired keys
+        del CACHED_QUERY[key]
+        return None
+
+    return answer
 
 
 async def fetch_dns(domain: str, type_: str):
-    if (domain, type_) in CACHED_QUERY:
-        return CACHED_QUERY.get((domain, type_))
+    if answer := get_cache(domain, type_):
+        return answer
 
     async with httpx.AsyncClient() as client:
         res = await client.get(
@@ -28,7 +52,9 @@ async def fetch_dns(domain: str, type_: str):
             }
         )
 
-        return res.json()
+        answer = res.json()
+        store_cache(domain, type_, answer)
+        return answer
 
 
 async def is_cloudflare(ip: str) -> bool:
@@ -66,11 +92,9 @@ async def patch_response(json, type_: str):
 async def dns_query(request: Request):
     domain = request.query_params.get('name')
     type_ = request.query_params.get('type', 'A')
-    query_key = (domain, type_)
 
-    if query_key in CACHED_QUERY:
-        json = CACHED_QUERY.get(query_key)
-        return JSONResponse(json)
+    if answer := get_cache(domain, type_):
+        return JSONResponse(answer)
 
     async with httpx.AsyncClient() as client:
         res = await client.get(
@@ -96,7 +120,7 @@ async def dns_query(request: Request):
             if await is_cloudflare(ip1):
                 json = await patch_response(json, type_)
 
-        CACHED_QUERY[query_key] = json
+        store_cache(domain, type_, json)
 
         return JSONResponse(
             json,
@@ -107,7 +131,7 @@ async def dns_query(request: Request):
             },
             status_code=res.status_code)
 
-    except KeyboardInterrupt as e:
+    except Exception as e:
         print(f'Error while fetching {domain}: {e}')
         return Response(
             res.text,

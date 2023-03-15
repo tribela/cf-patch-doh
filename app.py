@@ -30,7 +30,7 @@ async def dns_query(request: Request):
             return JSONResponse(answer)
         else:
             return Response(
-                dns_utils.json_to_wireformat(answer, tid),
+                dns_utils.json_to_wireformat(dns_record, answer),
                 headers={
                     'Content-Type': 'dns-message',
                 }
@@ -74,7 +74,7 @@ async def dns_query(request: Request):
                 status_code=res.status_code)
         else:
             return Response(
-                content=dns_utils.json_to_wireformat(answer, tid),
+                content=dns_utils.json_to_wireformat(dns_record, answer),
                 headers={
                     'Content-Type': 'dns-message',
                 }

@@ -94,16 +94,16 @@ def json_to_wireformat(json: dict) -> bytes:
 
 
 async def patch_response(json: dict, type_: str):
-    domain = json['Question'][0]['Name']
+    domain = json['Question'][0]['name']
     that_response = await fetch_dns('namu.wiki', type_)
     answer = [
         answer
         for answer in json['Answer']
-        if answer['Type'] not in (QTYPE.A, QTYPE.AAAA)
+        if answer['type'] not in (QTYPE.A, QTYPE.AAAA)
     ] + [
-        {**answer, 'Name': domain}
+        {**answer, 'name': domain}
         for answer in that_response['Answer']
-        if answer['Type'] in (QTYPE.A, QTYPE.AAAA)
+        if answer['type'] in (QTYPE.A, QTYPE.AAAA)
     ]
     json['Answer'] = answer
 

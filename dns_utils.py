@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 
 import httpx
@@ -107,7 +108,7 @@ async def is_cloudflare(ip: str) -> bool:
             result = data.get('asn_org') == 'CLOUDFLARENET'
             CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
             return result
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, json.JSONDecodeError) as e:
         print(f"Error while checking {ip}: {e}")
         CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=5), False)
         return False

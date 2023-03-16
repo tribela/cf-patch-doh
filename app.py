@@ -7,6 +7,11 @@ from fastapi import FastAPI, Request, Response
 app = FastAPI()
 
 
+@app.get("/health")
+async def health():
+    return 'OK'
+
+
 @app.post("/dns-query")
 async def dns_query(request: Request):
     if request.headers.get('accept') != 'application/dns-message' and \

@@ -70,7 +70,7 @@ async def patch_response(record: DNSRecord):
                 rname=domain,
                 rtype=answer.rtype,
                 rdata=answer.rdata,
-                ttl=answer.ttl,
+                ttl=max(answer.ttl, 600),
             )
             record.add_answer(rr)
 

@@ -95,7 +95,9 @@ async def is_cloudflare(ip: str) -> bool:
                 'https://ifconfig.co/json',
                 params={
                     'ip': ip,
-                })
+                },
+                timeout=1,
+            )
 
             data = res.json()
             return data['asn_org'] == 'CLOUDFLARENET'

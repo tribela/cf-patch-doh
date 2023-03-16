@@ -104,7 +104,7 @@ async def is_cloudflare(ip: str) -> bool:
             )
 
             data = res.json()
-            result = data['asn_org'] == 'CLOUDFLARENET'
+            result = data.get('asn_org') == 'CLOUDFLARENET'
             CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
             return result
     except httpx.HTTPError as e:

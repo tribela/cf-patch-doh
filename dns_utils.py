@@ -18,7 +18,6 @@ def store_cache(domain: str, type_: str, answer: list[RR]):
             if a.rtype in (QTYPE.A, QTYPE.AAAA))
     except StopIteration:
         ttl = 300
-    print(f'Storing {domain} {type_} with ttl {ttl}...')
     expire_timestamp = datetime.now() + timedelta(seconds=ttl)
 
     global CACHED_QUERY
@@ -78,8 +77,6 @@ async def patch_response(record: DNSRecord):
 async def fetch_dns(domain: str, type_: str) -> list[RR]:
     if answer := get_cache(domain, type_):
         return answer
-
-    print(f'Fetching {domain} ({type_})...')
 
     request = DNSRecord.question(domain, type_)
     res = request.send('1.1.1.1')

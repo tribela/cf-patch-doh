@@ -6,6 +6,7 @@ from dnslib import DNSRecord, QTYPE, RR
 
 
 CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, RRs)
+CACHED_IPS = {}  # IP: is_cloudflare
 
 
 def store_cache(domain: str, type_: str, answer: list[RR]):
@@ -89,6 +90,8 @@ async def fetch_dns(domain: str, type_: str) -> list[RR]:
 
 
 async def is_cloudflare(ip: str) -> bool:
+    if ip in CACHED_IPS:
+        return CACHED_IPS[ip]
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(
@@ -100,7 +103,10 @@ async def is_cloudflare(ip: str) -> bool:
             )
 
             data = res.json()
-            return data['asn_org'] == 'CLOUDFLARENET'
+            result = data['asn_org'] == 'CLOUDFLARENET'
+            CACHED_IPS[ip] = result
+            return result
     except httpx.HTTPError as e:
         print(f"Error while checking {ip}: {e}")
+        CACHED_IPS[ip] = False
         return False

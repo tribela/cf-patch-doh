@@ -80,7 +80,16 @@ async def fetch_dns(domain: str, type_: str) -> list[RR]:
         return answer
 
     request = DNSRecord.question(domain, type_)
-    res = request.send('1.1.1.1')
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            'https://1.1.1.1/dns-query',
+            headers={
+                'Content-Type': 'application/dns-message',
+            },
+            data=bytes(request.pack()),
+            timeout=5,
+        )
+        res = res.content
 
     answer = DNSRecord.parse(res)
     store_cache(domain, type_, answer.rr)

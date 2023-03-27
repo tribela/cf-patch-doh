@@ -51,7 +51,6 @@ def make_answer(record: DNSRecord, answer: list[RR]):
 async def patch_response(record: DNSRecord):
     domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
-    that_response = await fetch_dns('namu.wiki', type_)
 
     try:
         first_ip = next(
@@ -65,6 +64,7 @@ async def patch_response(record: DNSRecord):
         return record
     else:
         record.rr = []
+        that_response = await fetch_dns('namu.wiki', type_)
         for answer in that_response:
             rr = RR(
                 rname=domain,

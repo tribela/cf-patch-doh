@@ -119,5 +119,5 @@ async def is_cloudflare(ip: str) -> bool:
             return result
     except (httpx.HTTPError, json.JSONDecodeError) as e:
         print(f"Error while checking {ip}: {e}")
-        CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=5), False)
+        CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=1), False)
         return False

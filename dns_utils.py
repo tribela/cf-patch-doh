@@ -64,9 +64,17 @@ async def patch_response(record: DNSRecord):
             domain = str(rr.rdata).rstrip('.')
             if domain in BYPASS_LIST:
                 return record
-        elif rr.rtype in (QTYPE.A, QTYPE.AAAA):
-            if await is_cloudflare(str(rr.rdata)) is False:
-                return record
+
+    try:
+        first_ip = next(
+            str(rr.rdata)
+            for rr in record.rr
+            if rr.rtype in (QTYPE.A, QTYPE.AAAA)
+        )
+        if await is_cloudflare(first_ip) is False:
+            return record
+    except StopIteration:
+        return record
     else:
         record.rr = []
         that_response = await fetch_dns('namu.wiki', type_)
@@ -78,6 +86,7 @@ async def patch_response(record: DNSRecord):
                 ttl=max(answer.ttl, 600),
             )
             record.add_answer(rr)
+        return record
 
 
 async def fetch_dns(domain: str, type_: str) -> list[RR]:

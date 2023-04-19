@@ -10,4 +10,7 @@ RUN \
     poetry install --only main --no-root
 COPY . ./
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=2 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
 CMD ["uvicorn", "app:app", "--proxy-headers", "--host=0", "--port=5000"]

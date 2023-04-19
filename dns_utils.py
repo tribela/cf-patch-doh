@@ -10,7 +10,7 @@ CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, RRs)
 CACHED_IPS = {}  # IP: (expire_timestamp, is_cloudflare)
 
 BYPASS_LIST = {
-    'acme-v02.api.letsencrypt.org',
+    'prod.api.letsencrypt.org',
 }
 
 
@@ -59,18 +59,14 @@ async def patch_response(record: DNSRecord):
     if domain in BYPASS_LIST:
         return record
 
-    that_response = await fetch_dns('namu.wiki', type_)
-
-    try:
-        first_ip = next(
-            str(rr.rdata)
-            for rr in record.rr
-            if rr.rtype in (QTYPE.A, QTYPE.AAAA)
-        )
-        if await is_cloudflare(first_ip) is False:
-            return record
-    except StopIteration:
-        return record
+    for rr in record.rr:
+        if rr.rtype in (QTYPE.CNAME, QTYPE.NS):
+            domain = str(rr.rdata).rstrip('.')
+            if domain in BYPASS_LIST:
+                return record
+        elif rr.rtype in (QTYPE.A, QTYPE.AAAA):
+            if await is_cloudflare(str(rr.rdata)) is False:
+                return record
     else:
         record.rr = []
         that_response = await fetch_dns('namu.wiki', type_)

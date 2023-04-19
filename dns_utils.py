@@ -9,6 +9,10 @@ from dnslib import DNSRecord, QTYPE, RR
 CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, RRs)
 CACHED_IPS = {}  # IP: (expire_timestamp, is_cloudflare)
 
+BYPASS_LIST = {
+    'acme-v02.api.letsencrypt.org',
+}
+
 
 def store_cache(domain: str, type_: str, answer: list[RR]):
     key = (domain, type_)
@@ -51,6 +55,11 @@ def make_answer(record: DNSRecord, answer: list[RR]):
 async def patch_response(record: DNSRecord):
     domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
+
+    if domain in BYPASS_LIST:
+        return record
+
+    that_response = await fetch_dns('namu.wiki', type_)
 
     try:
         first_ip = next(

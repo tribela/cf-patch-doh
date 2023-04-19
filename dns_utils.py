@@ -53,10 +53,10 @@ def make_answer(record: DNSRecord, answer: list[RR]):
 
 
 async def patch_response(record: DNSRecord):
-    domain = record.q.qname.idna().rstrip('.')
+    query_domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
 
-    if domain in BYPASS_LIST:
+    if query_domain in BYPASS_LIST:
         return record
 
     for rr in record.rr:
@@ -72,7 +72,7 @@ async def patch_response(record: DNSRecord):
         that_response = await fetch_dns('namu.wiki', type_)
         for answer in that_response:
             rr = RR(
-                rname=domain,
+                rname=query_domain,
                 rtype=answer.rtype,
                 rdata=answer.rdata,
                 ttl=max(answer.ttl, 600),

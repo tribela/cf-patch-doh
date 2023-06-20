@@ -30,6 +30,7 @@ def store_cache(domain: str, type_: str, answer: list[RR]):
 
 
 def get_cache(domain: str, type_: str) -> list[RR] | None:
+    global CACHED_QUERY
     key = (domain, type_)
     now = datetime.now()
     if key not in CACHED_QUERY:
@@ -37,8 +38,14 @@ def get_cache(domain: str, type_: str) -> list[RR] | None:
     expire_timestamp, answer = CACHED_QUERY.get(key)
 
     if now > expire_timestamp:
-        # TODO: delete other expired keys
-        del CACHED_QUERY[key]
+        # del CACHED_QUERY[key]
+
+        # delete other expired keys
+        CACHED_QUERY = {
+            key: (expire, answer)
+            for key, (expire, answer) in CACHED_QUERY.items()
+            if now < expire
+        }
         return
 
     return answer
@@ -111,12 +118,21 @@ async def fetch_dns(domain: str, type_: str) -> list[RR]:
 
 
 async def is_cloudflare(ip: str) -> bool:
+    global CACHED_IPS
     if cached_values := CACHED_IPS.get(ip):
+        now = datetime.now()
         expire, result = cached_values
-        if datetime.now() < expire:
+        if now < expire:
             return result
         else:
-            del CACHED_IPS[ip]
+            # del CACHED_IPS[ip]
+
+            # Cleanup expired keys
+            CACHED_IPS = {
+                ip: (expire, result)
+                for ip, (expire, result) in CACHED_IPS.items()
+                if now < expire
+            }
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(

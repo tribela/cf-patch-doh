@@ -13,6 +13,7 @@ BYPASS_LIST = {
     'prod.api.letsencrypt.org',
     'cloudflare.com',
     'speed.cloudflare.com',
+    'shops.myshopify.com',
 }
 
 

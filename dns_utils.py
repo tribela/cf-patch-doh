@@ -147,7 +147,7 @@ async def is_cloudflare(ip: str) -> bool:
             )
 
             data = res.json()
-            result = data.get('asn_org') == 'CLOUDFLARENET'
+            result = data.get('asn_org') == 'CLOUDFLARENET' and "hostname" not in data
             CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
             return result
     except (httpx.HTTPError, json.JSONDecodeError) as e:

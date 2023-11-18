@@ -25,6 +25,9 @@ for domain in domains:
         headers={
             "Content-Type": "application/dns-message",
         },
+        params={
+            'upstream': 'https://1.0.0.1/dns-query'
+        },
         data=body,
         timeout=5,
     )

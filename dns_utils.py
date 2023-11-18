@@ -6,7 +6,7 @@ import httpx
 from dnslib import DNSRecord, QTYPE, RR
 
 
-CACHED_QUERY = {}  # (Domain, Type): (expire_timestamp, RRs)
+CACHED_QUERY = {}  # (Domain, Type, upstream): (expire_timestamp, RRs)
 CACHED_IPS = {}  # IP: (expire_timestamp, is_cloudflare)
 
 BYPASS_LIST = {
@@ -16,9 +16,11 @@ BYPASS_LIST = {
     'shops.myshopify.com',
 }
 
+DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'
 
-def store_cache(domain: str, type_: str, answer: list[RR]):
-    key = (domain, type_)
+
+def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):
+    key = (domain, type_, upstream)
     try:
         ttl = next(
             a.ttl
@@ -32,9 +34,13 @@ def store_cache(domain: str, type_: str, answer: list[RR]):
     CACHED_QUERY[key] = (expire_timestamp, answer)
 
 
-def get_cache(domain: str, type_: str) -> list[RR] | None:
+def get_cache(domain: str, type_: str, upstream: str | None) -> list[RR] | None:
     global CACHED_QUERY
-    key = (domain, type_)
+
+    if upstream is None:
+        upstream = DEFAULT_UPSTREAM
+
+    key = (domain, type_, upstream)
     now = datetime.now()
     if key not in CACHED_QUERY:
         return
@@ -45,7 +51,7 @@ def get_cache(domain: str, type_: str) -> list[RR] | None:
 
         # delete other expired keys
         CACHED_QUERY = {
-            key: (expire, answer)
+            key: (expire, answer, upstream)
             for key, (expire, answer) in CACHED_QUERY.items()
             if now < expire
         }
@@ -87,7 +93,7 @@ async def patch_response(record: DNSRecord):
         return record
     else:
         record.rr = []
-        that_response = await fetch_dns('namu.wiki', type_)
+        that_response = await fetch_dns('namu.wiki', type_, DEFAULT_UPSTREAM)
         for answer in that_response:
             rr = RR(
                 rname=query_domain,
@@ -99,14 +105,17 @@ async def patch_response(record: DNSRecord):
         return record
 
 
-async def fetch_dns(domain: str, type_: str) -> list[RR]:
-    if answer := get_cache(domain, type_):
+async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> list[RR]:
+    if upstream is None:
+        upstream = DEFAULT_UPSTREAM
+
+    if answer := get_cache(domain, type_, upstream):
         return answer
 
     request = DNSRecord.question(domain, type_)
     async with httpx.AsyncClient() as client:
         res = await client.post(
-            'https://1.1.1.1/dns-query',
+            upstream,
             headers={
                 'Content-Type': 'application/dns-message',
             },
@@ -116,7 +125,7 @@ async def fetch_dns(domain: str, type_: str) -> list[RR]:
         res = res.content
 
     answer = DNSRecord.parse(res)
-    store_cache(domain, type_, answer.rr)
+    store_cache(domain, type_, upstream, answer.rr)
     return answer.rr
 
 

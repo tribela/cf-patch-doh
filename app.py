@@ -22,13 +22,15 @@ async def dns_query(request: Request):
     domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
 
-    if rrs := dns_utils.get_cache(domain, type_):
+    upstream = request.query_params.get('upstream') or dns_utils.DEFAULT_UPSTREAM
+
+    if rrs := dns_utils.get_cache(domain, type_, upstream):
         answer = dns_utils.make_answer(record, rrs)
         return Response(bytes(answer.pack()), media_type='application/dns-message')
 
-    answer = await dns_utils.fetch_dns(domain, type_)
+    answer = await dns_utils.fetch_dns(domain, type_, upstream)
     answer = dns_utils.make_answer(record, answer)
     await dns_utils.patch_response(answer)
 
-    dns_utils.store_cache(domain, type_, answer.rr)
+    dns_utils.store_cache(domain, type_, upstream, answer.rr)
     return Response(bytes(answer.pack()), media_type='application/dns-message')

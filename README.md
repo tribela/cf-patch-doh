@@ -21,6 +21,13 @@ DOH 앱 추천 목록
 [Intra]: https://play.google.com/store/apps/details?id=app.intra
 
 
+### 원래 쓰던 DoH 서버가 있는데요
+
+`?upstream=<주소>`를 뒤에 추가하시면 업스트림 서버를 지정할 수 있습니다.
+예시:
+`https://cf-patch-doh.fly.dev/dns-query?upstream=https%3A%2F%2Fdns.server%2Fdns-query`
+
+
 ## 특정 사이트가 들어가지지 않아요
 
 클라우드플레어 내부 서비스 등은 패치하면 안 되는데도 패치가 들어가는 경우 접속이 안 되거나 에러가 뜨는 경우가 있습니다. 안 되는 사이트 주소를 이슈로 제보해 주세요.

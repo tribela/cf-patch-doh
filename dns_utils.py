@@ -51,7 +51,7 @@ def get_cache(domain: str, type_: str, upstream: str | None) -> list[RR] | None:
 
         # delete other expired keys
         CACHED_QUERY = {
-            key: (expire, answer, upstream)
+            key: (expire, answer)
             for key, (expire, answer) in CACHED_QUERY.items()
             if now < expire
         }

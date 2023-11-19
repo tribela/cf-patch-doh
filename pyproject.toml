@@ -9,7 +9,7 @@ packages = [{include = "cf_dns_patch"}]
 [tool.poetry.dependencies]
 python = "^3.10"
 httpx = "^0.23.3"
-fastapi = "^0.94.1"
+fastapi = "^0.104.1"
 uvicorn = "^0.21.0"
 dnslib = "^0.9.23"
 

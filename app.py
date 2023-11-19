@@ -12,8 +12,9 @@ async def health():
     return 'OK'
 
 
+@app.post("/dns-query/{upstream:path}")
 @app.post("/dns-query")
-async def dns_query(request: Request):
+async def dns_query(request: Request, upstream: str | None = None):
     if request.headers.get('accept') != 'application/dns-message' and \
             request.headers.get('content-type') != 'application/dns-message':
         return Response(status_code=406)
@@ -22,7 +23,7 @@ async def dns_query(request: Request):
     domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
 
-    upstream = request.query_params.get('upstream') or dns_utils.DEFAULT_UPSTREAM
+    upstream = upstream or request.query_params.get('upstream') or dns_utils.DEFAULT_UPSTREAM
 
     if rrs := dns_utils.get_cache(domain, type_, upstream):
         answer = dns_utils.make_answer(record, rrs)

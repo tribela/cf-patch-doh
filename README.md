@@ -23,9 +23,11 @@ DOH 앱 추천 목록
 
 ### 원래 쓰던 DoH 서버가 있는데요
 
-`?upstream=<주소>`를 뒤에 추가하시면 업스트림 서버를 지정할 수 있습니다.
+`?upstream=<주소>` 혹은 `/<주소>`를 뒤에 추가하시면 업스트림 서버를 지정할 수 있습니다.
+
 예시:
 `https://cf-patch-doh.fly.dev/dns-query?upstream=https%3A%2F%2Fdns.server%2Fdns-query`
+`https://cf-patch-doh.fly.dev/dns-query/https%3A%2F%2Fdns.server%2Fdns-query`
 
 
 ## 특정 사이트가 들어가지지 않아요

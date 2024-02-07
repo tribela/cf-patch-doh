@@ -1,13 +1,13 @@
 import json
 from datetime import datetime, timedelta
+from typing import Callable
 
 import httpx
 
 from dnslib import DNSRecord, QTYPE, RR
 
 
-CACHED_QUERY = {}  # (Domain, Type, upstream): (expire_timestamp, RRs)
-CACHED_IPS = {}  # IP: (expire_timestamp, is_cloudflare)
+MAX_CACHE_SIZE = 1000
 
 BYPASS_LIST = {
     'prod.api.letsencrypt.org',
@@ -17,6 +17,52 @@ BYPASS_LIST = {
 }
 
 DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'
+
+
+class TtlCache(dict):
+    def __init__(self, max_size: int, key: Callable):
+        self.max_size = max_size
+        self.key = key
+        super().__init__()
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if len(self) >= self.max_size:
+            self.expire()
+
+    def __getitem__(self, key):
+        self.expire()
+        value = super().__getitem__(key)
+        return value
+
+    def expire(self):
+        now = datetime.now()
+        elems = [
+            (key, value, self.key(value))
+            for key, value in super().items()
+        ]
+        elems.sort(key=lambda x: x[2])
+
+        keys_to_delete = [
+            key
+            for index, (key, _value, expire) in enumerate(elems)
+            if now > expire or index > self.max_size
+        ]
+
+        for key in keys_to_delete:
+            del self[key]
+
+
+# (Domain, Type, upstream): (expire_timestamp, RRs)
+CACHED_QUERY = TtlCache(
+    max_size=MAX_CACHE_SIZE,
+    key=lambda value: value[0],
+)
+# IP: (expire_timestamp, is_cloudflare)
+CACHED_IPS = TtlCache(
+    max_size=MAX_CACHE_SIZE,
+    key=lambda value: value[0],
+)
 
 
 def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):
@@ -41,23 +87,9 @@ def get_cache(domain: str, type_: str, upstream: str | None) -> list[RR] | None:
         upstream = DEFAULT_UPSTREAM
 
     key = (domain, type_, upstream)
-    now = datetime.now()
-    if key not in CACHED_QUERY:
-        return
-    expire_timestamp, answer = CACHED_QUERY.get(key)
-
-    if now > expire_timestamp:
-        # del CACHED_QUERY[key]
-
-        # delete other expired keys
-        CACHED_QUERY = {
-            key: (expire, answer)
-            for key, (expire, answer) in CACHED_QUERY.items()
-            if now < expire
-        }
-        return
-
-    return answer
+    if result := CACHED_QUERY.get(key):
+        _expire_timestamp, answer = result
+        return answer
 
 
 def make_answer(record: DNSRecord, answer: list[RR]):
@@ -132,19 +164,8 @@ async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> lis
 async def is_cloudflare(ip: str) -> bool:
     global CACHED_IPS
     if cached_values := CACHED_IPS.get(ip):
-        now = datetime.now()
-        expire, result = cached_values
-        if now < expire:
-            return result
-        else:
-            # del CACHED_IPS[ip]
-
-            # Cleanup expired keys
-            CACHED_IPS = {
-                ip: (expire, result)
-                for ip, (expire, result) in CACHED_IPS.items()
-                if now < expire
-            }
+        _expire, result = cached_values
+        return result
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(

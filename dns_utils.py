@@ -46,7 +46,7 @@ class TtlCache(dict):
         keys_to_delete = [
             key
             for index, (key, _value, expire) in enumerate(elems)
-            if now > expire or index > self.max_size
+            if now >= expire or index >= self.max_size
         ]
 
         for key in keys_to_delete:

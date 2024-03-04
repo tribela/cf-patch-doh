@@ -23,10 +23,9 @@ DOH 앱 추천 목록
 
 ### 원래 쓰던 DoH 서버가 있는데요
 
-`?upstream=<주소>` 혹은 `/<주소>`를 뒤에 추가하시면 업스트림 서버를 지정할 수 있습니다.
+`/<주소>`를 뒤에 추가하시면 업스트림 서버를 지정할 수 있습니다.
 
 예시:
-`https://cf-patch-doh.fly.dev/dns-query?upstream=https%3A%2F%2Fdns.server%2Fdns-query`
 `https://cf-patch-doh.fly.dev/dns-query/https%3A%2F%2Fdns.server%2Fdns-query`
 
 
@@ -40,6 +39,7 @@ DOH 앱 추천 목록
 
 cf-patch-doh.fly.dev는 fly.io에서 호스팅 되며, 접속 로그는 남습니다.
 일반적으로 DOH 요청은 POST로 요청되어 접속 로그엔 어떤 DNS 요청을 했는지 전혀 남지 않습니다.
+GET 방식을 사용하는 경우엔 DNS 요청 기록이 접속 로그에 남을 수 있습니다. 하지만 도메인 네임 이외의 정보는 노출되지 않습니다.
 
 
 ## 기타

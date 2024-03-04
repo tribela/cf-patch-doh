@@ -7,7 +7,10 @@ from fastapi import FastAPI, Request, Response
 from starlette.responses import RedirectResponse
 
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+)
 
 
 @app.get('/')

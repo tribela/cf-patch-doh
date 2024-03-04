@@ -4,9 +4,15 @@ import dns_utils
 
 from dnslib import DNSRecord, QTYPE
 from fastapi import FastAPI, Request, Response
+from starlette.responses import RedirectResponse
 
 
 app = FastAPI()
+
+
+@app.get('/')
+async def root_page():
+    return RedirectResponse('https://github.com/tribela/cf-patch-doh', status_code=303)
 
 
 @app.get('/health')

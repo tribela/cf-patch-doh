@@ -31,7 +31,9 @@ async def dns_query(request: Request, upstream: str | None = None):
     if request.method == 'GET':
         try:
             query_b64 = request.query_params.get('dns')
-            query_b64 += '=='  # Deal with padding
+            # Deal with padding
+            padding_needed = 4 - (len(query_b64) % 4)
+            query_b64 += '=' * padding_needed
             query = base64.b64decode(query_b64)
         except Exception as e:
             return Response(status_code=400)

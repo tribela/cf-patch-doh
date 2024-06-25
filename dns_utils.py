@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 import httpx
+import asyncwhois
 
 from dnslib import DNSRecord, QTYPE, RR
 
@@ -167,20 +168,11 @@ async def is_cloudflare(ip: str) -> bool:
         _expire, result = cached_values
         return result
     try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get(
-                'https://ifconfig.co/json',
-                params={
-                    'ip': ip,
-                },
-                timeout=1,
-            )
-
-            data = res.json()
-            result = data.get('asn_org') == 'CLOUDFLARENET' and "hostname" not in data
-            CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
-            return result
-    except (httpx.HTTPError, json.JSONDecodeError) as e:
+        _rawstr, whois_dict = await asyncwhois.aio_whois(ip)
+        result = whois_dict['net_name'] == 'CLOUDFLARENET'
+        CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
+        return result
+    except (asyncwhois.errors.GeneralError) as e:
         print(f"Error while checking {ip}: {e}")
         CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=1), False)
         return False

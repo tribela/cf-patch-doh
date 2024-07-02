@@ -169,7 +169,7 @@ async def is_cloudflare(ip: str) -> bool:
         return result
     try:
         _rawstr, whois_dict = await asyncwhois.aio_whois(ip)
-        result = whois_dict['net_name'] == 'CLOUDFLARENET'
+        result = whois_dict.get('net_name') == 'CLOUDFLARENET'
         CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
         return result
     except (asyncwhois.errors.GeneralError) as e:

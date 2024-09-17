@@ -7,11 +7,9 @@ import httpx
 
 domains = [
     'qdon.space',
-    'beta.qdon.space',
-    'blog.qdon.space',
-    'bucket.qdon.space',
     'google.com',
     'namu.wiki',
+    'kr1.chat.si.riotgames.com',
 ]
 
 server = os.getenv('DOH_SERVER', 'http://localhost:8000/dns-query')

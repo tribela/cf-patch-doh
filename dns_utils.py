@@ -15,6 +15,8 @@ BYPASS_LIST = {
     'cloudflare.com',
     'speed.cloudflare.com',
     'shops.myshopify.com',
+    '.cdn.cloudflare.com',
+    '.pacloudflare.com',
 }
 
 DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'
@@ -101,18 +103,26 @@ def make_answer(record: DNSRecord, answer: list[RR]):
     return response
 
 
-async def patch_response(record: DNSRecord):
+def should_bypass(record: DNSRecord):
     query_domain = record.q.qname.idna().rstrip('.')
-    type_ = QTYPE[record.q.qtype]
-
-    if query_domain in BYPASS_LIST:
-        return record
+    if any(query_domain.endswith(bypass) for bypass in BYPASS_LIST):
+        return True
 
     for rr in record.rr:
         if rr.rtype in (QTYPE.CNAME, QTYPE.NS):
             domain = str(rr.rdata).rstrip('.')
-            if domain in BYPASS_LIST:
-                return record
+            if any(domain.endswith(bypass) for bypass in BYPASS_LIST):
+                return True
+
+    return False
+
+
+async def patch_response(record: DNSRecord):
+    query_domain = record.q.qname.idna().rstrip('.')
+    type_ = QTYPE[record.q.qtype]
+
+    if should_bypass(record):
+        return record
 
     try:
         first_ip = next(

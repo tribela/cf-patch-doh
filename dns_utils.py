@@ -105,13 +105,17 @@ def make_answer(record: DNSRecord, answer: list[RR]):
 
 def should_bypass(record: DNSRecord):
     query_domain = record.q.qname.idna().rstrip('.')
-    if any(query_domain.endswith(bypass) for bypass in BYPASS_LIST):
+    if any(
+            query_domain.endswith(bypass) if bypass[0] == '.' else query_domain == bypass
+            for bypass in BYPASS_LIST):
         return True
 
     for rr in record.rr:
         if rr.rtype in (QTYPE.CNAME, QTYPE.NS):
             domain = str(rr.rdata).rstrip('.')
-            if any(domain.endswith(bypass) for bypass in BYPASS_LIST):
+            if any(
+                    domain.endswith(bypass) if bypass[0] == '.' else domain == bypass
+                    for bypass in BYPASS_LIST):
                 return True
 
     return False

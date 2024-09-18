@@ -15,7 +15,7 @@ BYPASS_LIST = {
     'cloudflare.com',
     'speed.cloudflare.com',
     'shops.myshopify.com',
-    '.cdn.cloudflare.com',
+    '.cdn.cloudflare.net',
     '.pacloudflare.com',
 }
 

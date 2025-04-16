@@ -61,5 +61,4 @@ async def get_record(query, upstream: str):
     answer = dns_utils.make_answer(record, answer)
     await dns_utils.patch_response(answer)
 
-    dns_utils.store_cache(domain, type_, upstream, answer.rr)
     return answer

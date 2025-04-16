@@ -3,7 +3,7 @@ name = "cf-dns-patch"
 version = "0.1.0"
 description = "DoH server that replace IP with higher CF server if needed"
 authors = [{ name = "Jeong Arm", email = "kjwonmail@gmail.com" }]
-requires-python = "~=3.10"
+requires-python = ">=3.10,<4"
 readme = "README.md"
 dependencies = [
     "asyncwhois>=1.1.10",

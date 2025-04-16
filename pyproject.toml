@@ -1,23 +1,30 @@
-[tool.poetry]
+[project]
 name = "cf-dns-patch"
 version = "0.1.0"
 description = "DoH server that replace IP with higher CF server if needed"
-authors = ["Jeong Arm <kjwonmail@gmail.com>"]
+authors = [{ name = "Jeong Arm", email = "kjwonmail@gmail.com" }]
+requires-python = "~=3.10"
 readme = "README.md"
-packages = [{include = "cf_dns_patch"}]
+dependencies = [
+    "asyncwhois>=1.1.10",
+    "dnslib>=0.9.26",
+    "fastapi>=0.115.12",
+    "httpx>=0.28.1",
+    "uvicorn>=0.34.1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-httpx = "^0.23.3"
-fastapi = "^0.104.1"
-uvicorn = "^0.21.0"
-dnslib = "^0.9.23"
-asyncwhois = "^1.1.4"
+[dependency-groups]
+dev = [
+    "flake8>=6.0.0,<7",
+    "flake8-import-order>=0.18.2,<0.19",
+]
 
-[tool.poetry.group.dev.dependencies]
-flake8 = "^6.0.0"
-flake8-import-order = "^0.18.2"
+[tool.hatch.build.targets.sdist]
+include = ["cf_dns_patch"]
+
+[tool.hatch.build.targets.wheel]
+include = ["cf_dns_patch"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,6 +1,7 @@
 import json
-from datetime import datetime, timedelta
-from typing import Callable
+import time
+from datetime import timedelta
+from typing import Callable, Generic, TypeVar
 
 import httpx
 import asyncwhois
@@ -21,34 +22,66 @@ BYPASS_LIST = {
 
 DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'
 
+T = TypeVar('T')
+V = TypeVar('V')
 
-class TtlCache(dict):
-    def __init__(self, max_size: int, key: Callable):
+
+class TtlCache(Generic[T, V]):
+    def __init__(self, max_size: int, max_ttl: int | float = 600, timer: Callable = time.monotonic):
         self.max_size = max_size
-        self.key = key
-        super().__init__()
+        self.max_ttl = max_ttl
+        self.timer = timer
+        self.storage = dict()
 
-    def __setitem__(self, key, value):
-        super().__setitem__(key, value)
-        if len(self) >= self.max_size:
+    def __setitem__(self, key: T, value: V):
+        expire = self.timer() + self.max_ttl
+        tup = (expire, value)
+        self.storage.__setitem__(key, tup)
+        if len(self.storage) >= self.max_size:
             self.expire()
 
-    def __getitem__(self, key):
-        self.expire()
-        value = super().__getitem__(key)
+    def __getitem__(self, key: T) -> V:
+        (expire, value) = self.storage.__getitem__(key)
+        if expire < self.timer():
+            del self[key]
+            raise KeyError(key)
         return value
 
+    def __delitem__(self, key: T):
+        try:
+            del self.storage[key]
+        except KeyError:
+            pass
+
+    def __len__(self) -> int:
+        return len(self.storage)
+
+    def get(self, key: T, default=None) -> V | None:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def store(self, key: T, value: V, ttl: int | float | None = None):
+        if ttl is None:
+            ttl = self.max_ttl
+        ttl = min(ttl, self.max_ttl)
+
+        expire = self.timer() + ttl
+        tup = (expire, value)
+        self.storage.__setitem__(key, tup)
+
     def expire(self):
-        now = datetime.now()
+        now = self.timer()
         elems = [
-            (key, value, self.key(value))
-            for key, value in super().items()
+            (expire, key, value)
+            for key, (expire, value) in self.storage.items()
         ]
-        elems.sort(key=lambda x: x[2])
+        elems.sort(key=lambda x: x[0])
 
         keys_to_delete = [
             key
-            for index, (key, _value, expire) in enumerate(elems)
+            for index, (expire, key, _value) in enumerate(elems)
             if now >= expire or index >= self.max_size
         ]
 
@@ -56,16 +89,10 @@ class TtlCache(dict):
             del self[key]
 
 
-# (Domain, Type, upstream): (expire_timestamp, RRs)
-CACHED_QUERY = TtlCache(
-    max_size=MAX_CACHE_SIZE,
-    key=lambda value: value[0],
-)
-# IP: (expire_timestamp, is_cloudflare)
-CACHED_IPS = TtlCache(
-    max_size=MAX_CACHE_SIZE,
-    key=lambda value: value[0],
-)
+# (Domain, Type, upstream): RRs
+CACHED_QUERY: TtlCache[tuple[str, str, str], list] = TtlCache(max_size=MAX_CACHE_SIZE)
+# IP: is_cloudflare
+CACHED_IPS: TtlCache[str, bool] = TtlCache(max_size=MAX_CACHE_SIZE)
 
 
 def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):
@@ -77,22 +104,16 @@ def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):
             if a.rtype in (QTYPE.A, QTYPE.AAAA))
     except StopIteration:
         ttl = 300
-    expire_timestamp = datetime.now() + timedelta(seconds=ttl)
 
-    global CACHED_QUERY
-    CACHED_QUERY[key] = (expire_timestamp, answer)
+    CACHED_QUERY.store(key, answer, ttl=ttl)
 
 
 def get_cache(domain: str, type_: str, upstream: str | None) -> list[RR] | None:
-    global CACHED_QUERY
-
     if upstream is None:
         upstream = DEFAULT_UPSTREAM
 
     key = (domain, type_, upstream)
-    if result := CACHED_QUERY.get(key):
-        _expire_timestamp, answer = result
-        return answer
+    return CACHED_QUERY.get(key)
 
 
 def make_answer(record: DNSRecord, answer: list[RR]):
@@ -177,16 +198,15 @@ async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> lis
 
 
 async def is_cloudflare(ip: str) -> bool:
-    global CACHED_IPS
-    if cached_values := CACHED_IPS.get(ip):
-        _expire, result = cached_values
+    if result := CACHED_IPS.get(ip):
         return result
     try:
         _rawstr, whois_dict = await asyncwhois.aio_whois(ip)
         result = whois_dict.get('net_name') == 'CLOUDFLARENET'
-        CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=60), result)
+        ttl = timedelta(hours=1).total_seconds()
+        CACHED_IPS.store(ip, result, ttl=ttl)
         return result
     except (asyncwhois.errors.GeneralError) as e:
         print(f"Error while checking {ip}: {e}")
-        CACHED_IPS[ip] = (datetime.now() + timedelta(minutes=1), False)
+        CACHED_IPS.store(ip, False, ttl=60)
         return False

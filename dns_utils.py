@@ -34,11 +34,7 @@ class TtlCache(Generic[T, V]):
         self.storage = dict()
 
     def __setitem__(self, key: T, value: V):
-        expire = self.timer() + self.max_ttl
-        tup = (expire, value)
-        self.storage.__setitem__(key, tup)
-        if len(self.storage) >= self.max_size:
-            self.expire()
+        return self.store(key, value)
 
     def __getitem__(self, key: T) -> V:
         (expire, value) = self.storage.__getitem__(key)
@@ -70,6 +66,9 @@ class TtlCache(Generic[T, V]):
         expire = self.timer() + ttl
         tup = (expire, value)
         self.storage.__setitem__(key, tup)
+
+        if len(self.storage) > self.max_size:
+            self.expire()
 
     def expire(self):
         now = self.timer()

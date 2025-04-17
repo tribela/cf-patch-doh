@@ -1,3 +1,4 @@
+import asyncio
 import time
 from datetime import timedelta
 from typing import Callable, Generic, TypeVar
@@ -204,7 +205,7 @@ async def is_cloudflare(ip: str) -> bool:
         ttl = timedelta(hours=1).total_seconds()
         CACHED_IPS.store(ip, result, ttl=ttl)
         return result
-    except (asyncwhois.errors.GeneralError) as e:
-        print(f"Error while checking {ip}: {e}")
+    except Exception as e:
+        print(f"Error while checking {ip}: {e or e.__class__.__name__}")
         CACHED_IPS.store(ip, False, ttl=60)
         return False

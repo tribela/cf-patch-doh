@@ -1,4 +1,3 @@
-import asyncio
 import time
 from datetime import timedelta
 from typing import Callable, Generic, TypeVar
@@ -71,21 +70,10 @@ class TtlCache(Generic[T, V]):
             self.expire()
 
     def expire(self):
-        now = self.timer()
-        elems = [
-            (expire, key, value)
-            for key, (expire, value) in self.storage.items()
-        ]
-        elems.sort(key=lambda x: x[0])
-
-        keys_to_delete = [
-            key
-            for index, (expire, key, _value) in enumerate(elems)
-            if now >= expire or index >= self.max_size
-        ]
-
-        for key in keys_to_delete:
-            del self[key]
+        over = len(self) - self.max_size
+        for _ in range(over):
+            oldest_key = min(self.storage.keys(), key=lambda k: self.storage[k][0])
+            del self[oldest_key]
 
 
 # (Domain, Type, upstream): RRs

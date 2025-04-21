@@ -77,9 +77,9 @@ class TtlCache(Generic[T, V]):
 
 
 # (Domain, Type, upstream): RRs
-CACHED_QUERY: TtlCache[tuple[str, str, str], list] = TtlCache(max_size=MAX_CACHE_SIZE)
+CACHED_QUERY: TtlCache[tuple[str, str, str], list] = TtlCache(max_size=MAX_CACHE_SIZE, max_ttl=3000)
 # IP: is_cloudflare
-CACHED_IPS: TtlCache[str, bool] = TtlCache(max_size=MAX_CACHE_SIZE)
+CACHED_IPS: TtlCache[str, bool] = TtlCache(max_size=MAX_CACHE_SIZE, max_ttl=60 * 60 * 24)
 
 
 def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):

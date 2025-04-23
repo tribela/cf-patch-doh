@@ -1,11 +1,12 @@
 import time
-from datetime import timedelta
 from typing import Callable, Generic, TypeVar
+from ipaddress import ip_address
 
 import httpx
-import asyncwhois
 
 from dnslib import DNSRecord, QTYPE, RR
+
+from .cloudflare import CF_NETWORKS
 
 
 MAX_CACHE_SIZE = 1000
@@ -78,8 +79,6 @@ class TtlCache(Generic[T, V]):
 
 # (Domain, Type, upstream): RRs
 CACHED_QUERY: TtlCache[tuple[str, str, str], list] = TtlCache(max_size=MAX_CACHE_SIZE, max_ttl=3000)
-# IP: is_cloudflare
-CACHED_IPS: TtlCache[str, bool] = TtlCache(max_size=MAX_CACHE_SIZE, max_ttl=60 * 60 * 24)
 
 
 def store_cache(domain: str, type_: str, upstream: str, answer: list[RR]):
@@ -185,15 +184,5 @@ async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> lis
 
 
 async def is_cloudflare(ip: str) -> bool:
-    if result := CACHED_IPS.get(ip):
-        return result
-    try:
-        _rawstr, whois_dict = await asyncwhois.aio_whois(ip)
-        result = whois_dict.get('net_name') == 'CLOUDFLARENET'
-        ttl = timedelta(hours=1).total_seconds()
-        CACHED_IPS.store(ip, result, ttl=ttl)
-        return result
-    except Exception as e:
-        print(f"Error while checking {ip}: {e or e.__class__.__name__}")
-        CACHED_IPS.store(ip, False, ttl=60)
-        return False
+    address = ip_address(ip)
+    return any(address in network for network in CF_NETWORKS)

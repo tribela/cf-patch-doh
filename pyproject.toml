@@ -20,10 +20,10 @@ dev = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["cf_dns_patch"]
+include = ["cf_patch_doh"]
 
 [tool.hatch.build.targets.wheel]
-include = ["cf_dns_patch"]
+include = ["cf_patch_doh"]
 
 [build-system]
 requires = ["hatchling"]

@@ -6,7 +6,7 @@ import time
 import dnslib
 import httpx
 
-from dns_utils import TtlCache
+from cf_patch_doh.dns_utils import TtlCache
 
 domains = [
     'qdon.space',

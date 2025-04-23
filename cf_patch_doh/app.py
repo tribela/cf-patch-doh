@@ -1,17 +1,15 @@
 import base64
 
-import dns_utils
-
 from dnslib import DNSRecord, QTYPE
 from fastapi import FastAPI, Request, Response
 from starlette.responses import RedirectResponse
 
+from . import dns_utils
 
 app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
-
 
 @app.get('/')
 async def root_page():

@@ -30,6 +30,8 @@ async def dns_query(request: Request, upstream: str | None = None):
     if request.method == 'GET':
         try:
             query_b64 = request.query_params.get('dns')
+            if query_b64 is None:
+                return Response(status_code=400)
             # Deal with padding
             padding_needed = 4 - (len(query_b64) % 4)
             query_b64 += '=' * padding_needed
@@ -41,12 +43,14 @@ async def dns_query(request: Request, upstream: str | None = None):
                 request.headers.get('content-type') != 'application/dns-message':
             return Response(status_code=406)
         query = await request.body()
+    else:
+        return Response(status_code=405)
 
     answer = await get_record(query, upstream)
     return Response(bytes(answer.pack()), media_type='application/dns-message')
 
 
-async def get_record(query, upstream: str):
+async def get_record(query, upstream: str | None = None):
     record = DNSRecord.parse(query)
     domain = record.q.qname.idna().rstrip('.')
     upstream = upstream or dns_utils.DEFAULT_UPSTREAM

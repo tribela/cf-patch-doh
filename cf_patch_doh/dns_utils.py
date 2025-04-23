@@ -31,7 +31,7 @@ class TtlCache(Generic[T, V]):
         self.max_size = max_size
         self.max_ttl = max_ttl
         self.timer = timer
-        self.storage = dict()
+        self.storage: dict[T, tuple[float, V]] = dict()
 
     def __setitem__(self, key: T, value: V):
         return self.store(key, value)

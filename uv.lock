@@ -60,7 +60,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cf-dns-patch"
+name = "cf-patch-doh"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

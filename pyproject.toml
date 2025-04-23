@@ -1,5 +1,5 @@
 [project]
-name = "cf-dns-patch"
+name = "cf-patch-doh"
 version = "0.1.0"
 description = "DoH server that replace IP with higher CF server if needed"
 authors = [{ name = "Jeong Arm", email = "kjwonmail@gmail.com" }]

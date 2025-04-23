@@ -174,7 +174,7 @@ async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> lis
                 'Content-Type': 'application/dns-message',
             },
             data=bytes(request.pack()),
-            timeout=5,
+            timeout=30,
         )
         res = res.content
 

@@ -1,48 +1,54 @@
-# fly.toml app configuration file generated for cf-patch-doh on 2023-07-11T09:17:50+09:00
+# fly.toml app configuration file generated for cf-patch-doh on 2025-04-23T20:19:16+09:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = "cf-patch-doh"
-primary_region = "nrt"
-kill_signal = "SIGINT"
-kill_timeout = "5s"
+app = 'cf-patch-doh'
+primary_region = 'nrt'
+kill_signal = 'SIGINT'
+kill_timeout = '5s'
 
 [experimental]
   auto_rollback = true
 
 [env]
-  FORWARDED_ALLOW_IPS = "*"
+  FORWARDED_ALLOW_IPS = '*'
 
 [[services]]
-  protocol = "tcp"
+  protocol = 'tcp'
   internal_port = 5000
-  processes = ["app"]
+  processes = ['app']
 
   [[services.ports]]
     port = 80
-    handlers = ["http"]
+    handlers = ['http']
     force_https = true
 
   [[services.ports]]
     port = 443
-    handlers = ["tls", "http"]
+    handlers = ['tls', 'http']
   [services.concurrency]
-    type = "connections"
+    type = 'connections'
     hard_limit = 100
     soft_limit = 50
 
   [[services.tcp_checks]]
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "1s"
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '1s'
     restart_limit = 0
 
   [[services.http_checks]]
-    interval = "1m0s"
-    timeout = "5s"
-    grace_period = "1s"
+    interval = '1m0s'
+    timeout = '5s'
+    grace_period = '1s'
     restart_limit = 2
-    method = "get"
-    path = "/health"
-    protocol = "http"
+    method = 'get'
+    path = '/health'
+    protocol = 'http'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

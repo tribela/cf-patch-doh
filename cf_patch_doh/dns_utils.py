@@ -1,6 +1,6 @@
 import time
-from typing import Callable, Generic, TypeVar
 from ipaddress import ip_address
+from typing import Callable, Generic, TypeVar
 
 import httpx
 

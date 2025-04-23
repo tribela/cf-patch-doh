@@ -11,6 +11,7 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
 @app.get('/')
 async def root_page():
     return RedirectResponse('https://github.com/tribela/cf-patch-doh', status_code=303)
@@ -33,7 +34,7 @@ async def dns_query(request: Request, upstream: str | None = None):
             padding_needed = 4 - (len(query_b64) % 4)
             query_b64 += '=' * padding_needed
             query = base64.b64decode(query_b64)
-        except Exception as e:
+        except Exception:
             return Response(status_code=400)
     elif request.method == 'POST':
         if request.headers.get('accept') != 'application/dns-message' and \

@@ -1,4 +1,4 @@
-FROM python:alpine
+FROM python:3.13-alpine
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"

@@ -1,12 +1,41 @@
+import struct
 import time
 from ipaddress import ip_address
 from typing import Callable, Generic, TypeVar
 
 import httpx
 
-from dnslib import DNSRecord, QTYPE, RR
+from dnslib import DNSRecord, HTTPS, QTYPE, RR
 
 from .cloudflare import CF_NETWORKS
+
+
+_SVCB_KEY_IPV4HINT = 4
+_SVCB_KEY_ECHCONFIG = 5
+_SVCB_KEY_IPV6HINT = 6
+
+
+def _unpack_ipv4s(data: bytes) -> list[str]:
+    ips = []
+    for i in range(0, len(data), 4):
+        ip = struct.unpack("!4B", data[i:i + 4])
+        ips.append(f"{ip[0]}.{ip[1]}.{ip[2]}.{ip[3]}")
+    return ips
+
+
+def _unpack_ipv6s(data: bytes) -> list[str]:
+    return [str(ip_address(data[i:i + 16])) for i in range(0, len(data), 16)]
+
+
+def _pack_ipv4s(ips: list[str]) -> bytes:
+    return b''.join(
+        struct.pack("!4B", *[int(x) for x in ip.split(".")])
+        for ip in ips
+    )
+
+
+def _pack_ipv6s(ips: list[str]) -> bytes:
+    return b''.join(ip_address(ip).packed for ip in ips)
 
 
 MAX_CACHE_SIZE = 1000
@@ -128,6 +157,44 @@ def should_bypass(record: DNSRecord):
     return False
 
 
+async def _get_icn_ips() -> tuple[list[str], list[str]]:
+    a_records = await fetch_dns('namu.wiki', 'A', DEFAULT_UPSTREAM)
+    ipv4s = [str(rr.rdata) for rr in a_records if rr.rtype == QTYPE.A]
+    aaaa_records = await fetch_dns('namu.wiki', 'AAAA', DEFAULT_UPSTREAM)
+    ipv6s = [str(rr.rdata) for rr in aaaa_records if rr.rtype == QTYPE.AAAA]
+    return ipv4s, ipv6s
+
+
+def _has_cf_in_https(record: DNSRecord) -> bool:
+    for rr in record.rr:
+        if rr.rtype in (QTYPE.HTTPS, QTYPE.SVCB) and isinstance(rr.rdata, HTTPS):
+            for key_id, value in rr.rdata.params:
+                if key_id == _SVCB_KEY_IPV4HINT:
+                    if any(is_cloudflare_sync(ip) for ip in _unpack_ipv4s(value)):
+                        return True
+                elif key_id == _SVCB_KEY_IPV6HINT:
+                    if any(is_cloudflare_sync(ip) for ip in _unpack_ipv6s(value)):
+                        return True
+    return False
+
+
+async def _has_cf_in_a_aaaa(record: DNSRecord) -> bool:
+    try:
+        first_ip = next(
+            str(rr.rdata)
+            for rr in record.rr
+            if rr.rtype in (QTYPE.A, QTYPE.AAAA)
+        )
+    except StopIteration:
+        return False
+    return await is_cloudflare(first_ip)
+
+
+def is_cloudflare_sync(ip: str) -> bool:
+    address = ip_address(ip)
+    return any(address in network for network in CF_NETWORKS)
+
+
 async def patch_response(record: DNSRecord):
     query_domain = record.q.qname.idna().rstrip('.')
     type_ = QTYPE[record.q.qtype]
@@ -135,19 +202,18 @@ async def patch_response(record: DNSRecord):
     if should_bypass(record):
         return record
 
-    try:
-        first_ip = next(
-            str(rr.rdata)
-            for rr in record.rr
-            if rr.rtype in (QTYPE.A, QTYPE.AAAA)
-        )
-        if await is_cloudflare(first_ip) is False:
-            return record
-    except StopIteration:
+    cf_in_a_aaaa = await _has_cf_in_a_aaaa(record)
+    cf_in_https = _has_cf_in_https(record)
+
+    if not cf_in_a_aaaa and not cf_in_https:
         return record
-    else:
-        record.rr = []
+
+    icn_ipv4s, icn_ipv6s = await _get_icn_ips()
+
+    if cf_in_a_aaaa:
         that_response = await fetch_dns('namu.wiki', type_, DEFAULT_UPSTREAM)
+        non_a_aaaa = [rr for rr in record.rr if rr.rtype not in (QTYPE.A, QTYPE.AAAA)]
+        record.rr = non_a_aaaa
         for answer in that_response:
             rr = RR(
                 rname=query_domain,
@@ -156,7 +222,21 @@ async def patch_response(record: DNSRecord):
                 ttl=max(answer.ttl, 600),
             )
             record.add_answer(rr)
-        return record
+
+    if cf_in_https:
+        for rr in record.rr:
+            if rr.rtype in (QTYPE.HTTPS, QTYPE.SVCB) and isinstance(rr.rdata, HTTPS):
+                new_params = []
+                for key_id, value in rr.rdata.params:
+                    if key_id == _SVCB_KEY_IPV4HINT and icn_ipv4s:
+                        new_params.append((key_id, _pack_ipv4s(icn_ipv4s)))
+                    elif key_id == _SVCB_KEY_IPV6HINT and icn_ipv6s:
+                        new_params.append((key_id, _pack_ipv6s(icn_ipv6s)))
+                    else:
+                        new_params.append((key_id, value))
+                rr.rdata.params = new_params
+
+    return record
 
 
 async def fetch_dns(domain: str, type_: str, upstream: str | None = None) -> list[RR]:

@@ -78,6 +78,59 @@ def test_upstream_path(domain):
     print(res.elapsed.total_seconds())
 
 
+def test_post_https(domain):
+    q = dnslib.DNSRecord.question(domain, 'HTTPS')
+
+    body = bytes(q.pack())
+
+    res = httpx.post(
+        server,
+        headers={
+            "Content-Type": "application/dns-message",
+        },
+        data=body,
+        timeout=5,
+    )
+
+    resp = dnslib.DNSRecord.parse(res.content)
+    print(resp)
+    print(res.elapsed.total_seconds())
+    for rr in resp.rr:
+        if isinstance(rr.rdata, dnslib.HTTPS):
+            for key_id, value in rr.rdata.params:
+                if key_id == 4:
+                    ips = [f'{value[i]}.{value[i+1]}.{value[i+2]}.{value[i+3]}'
+                           for i in range(0, len(value), 4)]
+                    print(f'  ipv4hint: {ips}')
+                elif key_id == 5:
+                    print(f'  echconfig: present (len={len(value)})')
+                elif key_id == 6:
+                    from ipaddress import ip_address as _ip
+                    ips = [str(_ip(bytes(value[i:i+16]))) for i in range(0, len(value), 16)]
+                    print(f'  ipv6hint: {ips}')
+
+
+def test_get_https(domain):
+    q = dnslib.DNSRecord.question(domain, 'HTTPS')
+
+    params = {
+        'dns': base64.b64encode(q.pack()).decode()
+    }
+
+    res = httpx.get(
+        server,
+        headers={
+            "Content-Type": "application/dns-message",
+        },
+        params=params,
+        timeout=5,
+    )
+
+    resp = dnslib.DNSRecord.parse(res.content)
+    print(resp)
+    print(res.elapsed.total_seconds())
+
+
 def test_cache():
     cache: TtlCache[str, str] = TtlCache(max_size=3, max_ttl=2)
 
@@ -113,6 +166,12 @@ for domain in domains * 3:
     test_post(domain)
     test_get(domain)
     test_upstream_path(domain)
+    print()
+
+for domain in domains:
+    print(f'{domain} (HTTPS)')
+    test_post_https(domain)
+    test_get_https(domain)
     print()
 
 test_cache()

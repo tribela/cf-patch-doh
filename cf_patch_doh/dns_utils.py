@@ -47,6 +47,7 @@ BYPASS_LIST = {
     'shops.myshopify.com',
     '.cdn.cloudflare.net',
     '.pacloudflare.com',
+    '.clerkprod-cloudflare.net',
 }
 
 DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'

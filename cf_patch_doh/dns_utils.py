@@ -48,6 +48,7 @@ BYPASS_LIST = {
     '.cdn.cloudflare.net',
     '.pacloudflare.com',
     '.clerkprod-cloudflare.net',
+    'yarn.npmjs.org',
 }
 
 DEFAULT_UPSTREAM = 'https://1.1.1.1/dns-query'

@@ -1,3 +1,4 @@
+import asyncio
 import struct
 import time
 from ipaddress import ip_address
@@ -8,6 +9,20 @@ import httpx
 from dnslib import DNSRecord, HTTPS, QTYPE, RR
 
 from .cloudflare import CF_NETWORKS
+
+
+# 후보 도메인 풀: 공유 anycast IP를 반환하면서 ICN PoP로 announce되는 대형
+# Cloudflare 사이트들. 2026-08 실측 기준으로 각 도메인의 IP는 ICN PoP으로
+# 라우팅되고 다른 도메인의 SNI로도 접속 가능(1034 차단 없음)함을 확인했다.
+# cloudflare.com / speed.cloudflare.com은 전용 IP(1034 Edge IP Restricted)를
+# 반환하므로 풀에서 제외한다.
+CANDIDATE_DOMAINS = (
+    'discord.com',
+    'discord.gg',
+    'openai.com',
+    'chatgpt.com',
+    'x.com',
+)
 
 
 _SVCB_KEY_IPV4HINT = 4
@@ -159,10 +174,35 @@ def should_bypass(record: DNSRecord):
     return False
 
 
-async def _get_icn_ips() -> tuple[list[str], list[str]]:
-    a_records = await fetch_dns('namu.wiki', 'A', DEFAULT_UPSTREAM)
+async def _fetch_candidate_records(type_: str, upstream: str | None = None) -> list[RR]:
+    if upstream is None:
+        upstream = DEFAULT_UPSTREAM
+
+    tasks = [
+        asyncio.create_task(fetch_dns(domain, type_, upstream))
+        for domain in CANDIDATE_DOMAINS
+    ]
+    try:
+        while tasks:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    answer = task.result()
+                except Exception:
+                    continue
+                if any(rr.rtype in (QTYPE.A, QTYPE.AAAA) for rr in answer):
+                    return answer
+            tasks = list(pending)
+        return []
+    finally:
+        for task in tasks:
+            task.cancel()
+
+
+async def _fetch_candidate_ips() -> tuple[list[str], list[str]]:
+    a_records = await _fetch_candidate_records('A')
     ipv4s = [str(rr.rdata) for rr in a_records if rr.rtype == QTYPE.A]
-    aaaa_records = await fetch_dns('namu.wiki', 'AAAA', DEFAULT_UPSTREAM)
+    aaaa_records = await _fetch_candidate_records('AAAA')
     ipv6s = [str(rr.rdata) for rr in aaaa_records if rr.rtype == QTYPE.AAAA]
     return ipv4s, ipv6s
 
@@ -210,10 +250,10 @@ async def patch_response(record: DNSRecord):
     if not cf_in_a_aaaa and not cf_in_https:
         return record
 
-    icn_ipv4s, icn_ipv6s = await _get_icn_ips()
-
     if cf_in_a_aaaa:
-        that_response = await fetch_dns('namu.wiki', type_, DEFAULT_UPSTREAM)
+        that_response = await _fetch_candidate_records(type_)
+        if not that_response:
+            return record
         non_a_aaaa = [rr for rr in record.rr if rr.rtype not in (QTYPE.A, QTYPE.AAAA)]
         record.rr = non_a_aaaa
         for answer in that_response:
@@ -226,14 +266,15 @@ async def patch_response(record: DNSRecord):
             record.add_answer(rr)
 
     if cf_in_https:
+        patch_ipv4s, patch_ipv6s = await _fetch_candidate_ips()
         for rr in record.rr:
             if rr.rtype in (QTYPE.HTTPS, QTYPE.SVCB) and isinstance(rr.rdata, HTTPS):
                 new_params = []
                 for key_id, value in rr.rdata.params:
-                    if key_id == _SVCB_KEY_IPV4HINT and icn_ipv4s:
-                        new_params.append((key_id, _pack_ipv4s(icn_ipv4s)))
-                    elif key_id == _SVCB_KEY_IPV6HINT and icn_ipv6s:
-                        new_params.append((key_id, _pack_ipv6s(icn_ipv6s)))
+                    if key_id == _SVCB_KEY_IPV4HINT and patch_ipv4s:
+                        new_params.append((key_id, _pack_ipv4s(patch_ipv4s)))
+                    elif key_id == _SVCB_KEY_IPV6HINT and patch_ipv6s:
+                        new_params.append((key_id, _pack_ipv6s(patch_ipv6s)))
                     else:
                         new_params.append((key_id, value))
                 rr.rdata.params = new_params

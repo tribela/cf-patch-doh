@@ -2,27 +2,27 @@
 """Unit tests for cf-patch-doh.
 
 Tests internal logic without requiring a running HTTP server.
-Network calls (fetch_dns, _get_icn_ips) are mocked.
+Network calls (fetch_dns, _fetch_candidate_ips) are mocked.
 """
 import struct
 from unittest.mock import AsyncMock, patch
 
 import dnslib
 import pytest
-from dnslib import DNSRecord, HTTPS, QTYPE, RR
 
 from cf_patch_doh.dns_utils import (
-    TtlCache,
     _pack_ipv4s,
     _pack_ipv6s,
     _unpack_ipv4s,
     _unpack_ipv6s,
+    CANDIDATE_DOMAINS,
     is_cloudflare_sync,
     make_answer,
     patch_response,
     should_bypass,
+    TtlCache,
 )
-from cf_patch_doh.cloudflare import CF_NETWORKS
+from dnslib import DNSRecord, HTTPS, QTYPE, RR
 
 # =============================================================================
 # Helper function tests
@@ -370,10 +370,10 @@ def https_rr(domain: str, params: list, ttl: int = 300) -> RR:
 
 
 class TestPatchResponse:
-    """patch_response replaces CF IPs in DNS responses with ICN IPs.
+    """patch_response replaces CF IPs in DNS responses with candidate IPs.
 
     It depends on:
-      - _get_icn_ips() - fetches current ICN IPs from namu.wiki
+      - _fetch_candidate_ips() - fetches candidate IPs from CANDIDATE_DOMAINS pool
       - fetch_dns()    - fetches DNS records from upstream
 
     Both are mocked in these tests.
@@ -391,26 +391,25 @@ class TestPatchResponse:
 
     @pytest.mark.asyncio
     async def test_cf_a_record_patched(self):
-        """A record with CF IP should have IP replaced with ICN IP."""
+        """A record with CF IP should have IP replaced with candidate IP."""
         record = _build_dns_response("example.com", "A", [
             a_rr("example.com", "104.16.0.1"),  # CF IP
             a_rr("example.com", "104.16.0.2"),  # CF IP
         ])
 
-        fake_icn_v4 = ["203.0.113.1", "203.0.113.2"]
-        fake_icn_v6 = ["2001:db8::1"]
-
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=600),
-                a_rr("namu.wiki", "203.0.113.2", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.2", ttl=600),
             ]
             result = await patch_response(record)
 
-        # IPs should be replaced with fetched ICN IPs
+        # A/AAAA patching uses CANDIDATE_DOMAINS[0] records; candidate lookup is not needed
+        mock_patch.assert_not_called()
+        # IPs should be replaced with fetched candidate IPs
         assert len(result.rr) == 2
         assert str(result.rr[0].rdata) == "203.0.113.1"
         assert str(result.rr[1].rdata) == "203.0.113.2"
@@ -432,18 +431,17 @@ class TestPatchResponse:
             aaaa_rr("example.com", "2606:4700::1"),  # CF IPv6
         ])
 
-        fake_icn_v4 = ["203.0.113.1"]
-        fake_icn_v6 = ["2001:db8::1"]
-
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                aaaa_rr("namu.wiki", "2001:db8::1", ttl=600),
+                aaaa_rr(CANDIDATE_DOMAINS[0], "2001:db8::1", ttl=600),
             ]
             result = await patch_response(record)
 
+        # A/AAAA patching uses CANDIDATE_DOMAINS[0] records; candidate lookup is not needed
+        mock_patch.assert_not_called()
         assert len(result.rr) == 1
         assert str(result.rr[0].rdata) == "2001:db8::1"
 
@@ -467,21 +465,24 @@ class TestPatchResponse:
             ]),
         ])
 
-        fake_icn_v4 = ["203.0.113.10", "203.0.113.11"]
-        fake_icn_v6 = ["2001:db8::1"]
+        fake_patch_v4 = ["203.0.113.10", "203.0.113.11"]
+        fake_patch_v6 = ["2001:db8::1"]
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch(
+                "cf_patch_doh.dns_utils._fetch_candidate_ips",
+                AsyncMock(return_value=(fake_patch_v4, fake_patch_v6)),
+            ),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.10", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.10", ttl=600),
             ]
             result = await patch_response(record)
 
         https_rr_result = result.rr[0]
         params = https_rr_result.rdata.params
-        # ipv4hint (4) should be replaced with ICN IPs
+        # ipv4hint (4) should be replaced with candidate IPs
         ipv4hint_val = dict(params)[4]
         assert _unpack_ipv4s(ipv4hint_val) == ["203.0.113.10", "203.0.113.11"]
 
@@ -497,15 +498,18 @@ class TestPatchResponse:
             ]),
         ])
 
-        fake_icn_v4 = ["203.0.113.1"]
-        fake_icn_v6 = ["2001:db8::10"]
+        fake_patch_v4 = ["203.0.113.1"]
+        fake_patch_v6 = ["2001:db8::10"]
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch(
+                "cf_patch_doh.dns_utils._fetch_candidate_ips",
+                AsyncMock(return_value=(fake_patch_v4, fake_patch_v6)),
+            ),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                aaaa_rr("namu.wiki", "2001:db8::10", ttl=600),
+                aaaa_rr(CANDIDATE_DOMAINS[0], "2001:db8::10", ttl=600),
             ]
             result = await patch_response(record)
 
@@ -523,11 +527,14 @@ class TestPatchResponse:
         ])
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(["203.0.113.1"], ["2001:db8::1"]))),
+            patch(
+                "cf_patch_doh.dns_utils._fetch_candidate_ips",
+                AsyncMock(return_value=(["203.0.113.1"], ["2001:db8::1"])),
+            ),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=600),
             ]
             result = await patch_response(record)
 
@@ -545,15 +552,18 @@ class TestPatchResponse:
             ]),
         ])
 
-        fake_icn_v4 = ["203.0.113.10"]
-        fake_icn_v6 = ["2001:db8::1"]
+        fake_patch_v4 = ["203.0.113.10"]
+        fake_patch_v6 = ["2001:db8::1"]
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch(
+                "cf_patch_doh.dns_utils._fetch_candidate_ips",
+                AsyncMock(return_value=(fake_patch_v4, fake_patch_v6)),
+            ),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=600),
             ]
             result = await patch_response(record)
 
@@ -572,21 +582,21 @@ class TestPatchResponse:
             ]),
         ])
 
-        # Even with ICN IPs available, no fetch_dns should be called
+        # Even with candidate IPs available, no fetch_dns should be called
         # since the record has no CF IPs
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips") as mock_icn,
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns") as mock_fetch,
         ):
             result = await patch_response(record)
 
-        mock_icn.assert_not_called()
+        mock_patch.assert_not_called()
         mock_fetch.assert_not_called()
         assert result is record  # returned as-is
 
     @pytest.mark.asyncio
     async def test_only_https_svcb_rr_checked(self):
-        """HTTPS params with CF hints should be patched for ICN IPs."""
+        """HTTPS params with CF hints should be patched for candidate IPs."""
         record = DNSRecord.question("example.com", "A")
         response = record.reply()
         response.add_answer(https_rr("example.com", [
@@ -594,11 +604,11 @@ class TestPatchResponse:
         ]))
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(["203.0.113.1"], []))),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips", AsyncMock(return_value=(["203.0.113.1"], []))),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=600),
             ]
             result = await patch_response(response)
 
@@ -613,14 +623,16 @@ class TestPatchResponse:
         ])
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(["203.0.113.1"], []))),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=120),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=120),
             ]
             result = await patch_response(record)
 
+        # A/AAAA patching uses CANDIDATE_DOMAINS[0] records; candidate lookup is not needed
+        mock_patch.assert_not_called()
         assert result.rr[0].ttl == 600  # max(120, 600)
 
     @pytest.mark.asyncio
@@ -631,44 +643,49 @@ class TestPatchResponse:
         ])
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(["203.0.113.1"], []))),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                a_rr("namu.wiki", "203.0.113.1", ttl=3600),
+                a_rr(CANDIDATE_DOMAINS[0], "203.0.113.1", ttl=3600),
             ]
             result = await patch_response(record)
 
+        # A/AAAA patching uses CANDIDATE_DOMAINS[0] records; candidate lookup is not needed
+        mock_patch.assert_not_called()
         assert result.rr[0].ttl == 3600  # max(3600, 600)
 
     @pytest.mark.asyncio
-    async def test_https_icn_v4_empty_no_replacement(self):
-        """When no ICN IPv4 available, IPv4 hint should remain unchanged."""
+    async def test_https_candidate_v4_empty_no_replacement(self):
+        """When no candidate IPv4 available, IPv4 hint should remain unchanged."""
         record = _build_dns_response("example.com", "HTTPS", [
             https_rr("example.com", [
                 (4, _pack_ipv4s(["104.16.0.1"])),
             ]),
         ])
 
-        fake_icn_v4 = []  # no IPv4 ICN IPs
-        fake_icn_v6 = ["2001:db8::1"]
+        fake_patch_v4 = []  # no IPv4 candidate IPs
+        fake_patch_v6 = ["2001:db8::1"]
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips", AsyncMock(return_value=(fake_icn_v4, fake_icn_v6))),
+            patch(
+                "cf_patch_doh.dns_utils._fetch_candidate_ips",
+                AsyncMock(return_value=(fake_patch_v4, fake_patch_v6)),
+            ),
             patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock) as mock_fetch,
         ):
             mock_fetch.return_value = [
-                aaaa_rr("namu.wiki", "2001:db8::1", ttl=600),
+                aaaa_rr(CANDIDATE_DOMAINS[0], "2001:db8::1", ttl=600),
             ]
             result = await patch_response(record)
 
         params = dict(result.rr[0].rdata.params)
-        # IPv4 hint should be unchanged since we have no ICN v4 IPs
+        # IPv4 hint should be unchanged since we have no candidate v4 IPs
         assert _unpack_ipv4s(params[4]) == ["104.16.0.1"]
 
     @pytest.mark.asyncio
     async def test_https_hints_not_cf_should_not_trigger_fetch(self):
-        """If HTTPS hints are not CF IPs, no fetch or ICN lookup should happen."""
+        """If HTTPS hints are not CF IPs, no fetch or candidate lookup should happen."""
         record = _build_dns_response("example.com", "HTTPS", [
             https_rr("example.com", [
                 (4, _pack_ipv4s(["1.2.3.4"])),  # non-CF
@@ -676,12 +693,12 @@ class TestPatchResponse:
         ])
 
         with (
-            patch("cf_patch_doh.dns_utils._get_icn_ips") as mock_icn,
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
             patch("cf_patch_doh.dns_utils.fetch_dns") as mock_fetch,
         ):
             result = await patch_response(record)
 
-        mock_icn.assert_not_called()
+        mock_patch.assert_not_called()
         mock_fetch.assert_not_called()
         assert result is record
 
@@ -689,6 +706,78 @@ class TestPatchResponse:
 # =============================================================================
 # Cache integration tests (fetch_dns / get_cache / store_cache)
 # =============================================================================
+
+
+class TestCandidatePool:
+    """Tests for _fetch_candidate_records pooling across CANDIDATE_DOMAINS."""
+
+    @pytest.mark.asyncio
+    async def test_queries_all_candidate_domains(self):
+        """Every candidate domain should be queried in parallel."""
+        from cf_patch_doh.dns_utils import _fetch_candidate_records
+
+        with patch(
+            "cf_patch_doh.dns_utils.fetch_dns",
+            new_callable=AsyncMock,
+        ) as mock_fetch:
+            mock_fetch.return_value = [a_rr("candidate.test", "1.2.3.4")]
+
+            await _fetch_candidate_records('A', 'https://upstream.test/dns-query')
+
+            called_domains = [call.args[0] for call in mock_fetch.call_args_list]
+            assert set(called_domains) == set(CANDIDATE_DOMAINS)
+
+    @pytest.mark.asyncio
+    async def test_first_usable_answer_wins(self):
+        """Usable answer from any candidate should be returned."""
+        from cf_patch_doh.dns_utils import _fetch_candidate_records
+
+        def side_effect(domain, type_, upstream):
+            if domain == CANDIDATE_DOMAINS[0]:
+                return [a_rr(domain, "203.0.113.1", ttl=600)]
+            return []
+
+        with patch(
+            "cf_patch_doh.dns_utils.fetch_dns",
+            new_callable=AsyncMock,
+            side_effect=side_effect,
+        ):
+            result = await _fetch_candidate_records('A', 'https://upstream.test/dns-query')
+
+        assert len(result) == 1
+        assert str(result[0].rdata) == "203.0.113.1"
+
+    @pytest.mark.asyncio
+    async def test_all_candidates_fail_returns_empty(self):
+        """Empty list when every candidate returns nothing."""
+        from cf_patch_doh.dns_utils import _fetch_candidate_records
+
+        with patch(
+            "cf_patch_doh.dns_utils.fetch_dns",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await _fetch_candidate_records('A', 'https://upstream.test/dns-query')
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_a_patch_keeps_original_when_no_candidate_ips(self):
+        """patch_response should return the record unchanged when no candidate answers."""
+        record = _build_dns_response("example.com", "A", [
+            a_rr("example.com", "104.16.0.1"),  # CF IP
+        ])
+
+        with (
+            patch("cf_patch_doh.dns_utils.fetch_dns", new_callable=AsyncMock, return_value=[]),
+            patch("cf_patch_doh.dns_utils._fetch_candidate_ips") as mock_patch,
+        ):
+            result = await patch_response(record)
+
+        mock_patch.assert_not_called()
+        # Original A record must survive when patching is impossible
+        assert len(result.rr) == 1
+        assert str(result.rr[0].rdata) == "104.16.0.1"
 
 
 class TestCacheIntegration:
